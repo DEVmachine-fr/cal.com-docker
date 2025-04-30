@@ -1,0 +1,70 @@
+version: '3.8'
+
+volumes:
+  database-data:
+
+networks:
+  stack:
+    name: stack
+    external: false
+
+services:
+  database:
+    container_name: database
+    image: postgres
+    restart: always
+    volumes:
+      - database-data:/var/lib/postgresql/data/
+    env_file: .env
+    networks:
+      - stack
+
+  calcom:
+    image: eu.gcr.io/calcom-407110/calcom/calcom:1.0.0
+    container_name: calcom
+    restart: always
+    env_file: .env
+    networks:
+      - stack
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DATABASE_HOST}/${POSTGRES_DB}
+    depends_on:
+      - database
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./data/nginx-conf:/etc/nginx/conf.d
+      - ./data/certbot/conf:/etc/letsencrypt
+      - ./data/certbot/www:/var/www/certbot
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+    restart: always
+    networks:
+      - stack
+
+  certbot:
+    container_name: certbot
+    image: certbot/certbot
+    restart: unless-stopped
+    volumes:
+      - ./data/certbot/conf:/etc/letsencrypt
+      - ./data/certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - stack
+
+  mailhog:
+    image: mailhog/mailhog
+    container_name: mailhog
+    logging:
+      driver: 'none'  # disable saving logs
+    command: "-ui-web-path=mailhog"
+    ports:
+      - 1025:1025 # smtp server
+      - 8025:8025 # web ui
+    networks:
+      - stack
